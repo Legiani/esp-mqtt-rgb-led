@@ -42,6 +42,17 @@ int loopCount = 0;
 int stepW;
 int whtVal;
 
+// Globals for flash
+bool flash = false;
+bool startFlash = false;
+int flashLength = 0;
+unsigned long flashStartTime = 0;
+byte flashWhite = white;
+byte flashBrightness = brightness;
+
+//Globals for colorfade
+bool colorfade = false;
+
 WiFiClient espClient;
 PubSubClient client(espClient);
 
@@ -149,6 +160,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
   sendState();
 }
 
+
 bool processJson(char* message) {
   StaticJsonBuffer<BUFFER_SIZE> jsonBuffer;
 
@@ -167,7 +179,59 @@ bool processJson(char* message) {
       stateOn = false;
     }
   }
-  
+
+   // If "flash" is included, treat RGB and brightness differently
+  if (root.containsKey("flash") ||
+       (root.containsKey("effect") && strcmp(root["effect"], "flash") == 0)) {
+
+    if (root.containsKey("flash")) {
+      flashLength = (int)root["flash"] * 1000;
+    }
+    else {
+      flashLength = CONFIG_DEFAULT_FLASH_LENGTH * 1000;
+    }
+
+    if (root.containsKey("brightness")) {
+      flashBrightness = root["brightness"];
+    }
+    else {
+      flashBrightness = brightness;
+    }
+
+
+    if (root.containsKey("white_value")) {
+      flashWhite = root["white_value"];
+    }
+    else {
+      flashWhite = white;
+    }
+
+    flashWhite = map(flashWhite, 0, 255, 0, flashBrightness);
+
+    flash = true;
+    startFlash = true;
+  }
+  else { // No effect
+    flash = false;
+    colorfade = false;
+
+    if (root.containsKey("white_value")) {
+      white = root["white_value"];
+    }
+
+    if (root.containsKey("brightness")) {
+      brightness = root["brightness"];
+    }
+
+    if (root.containsKey("transition")) {
+      transitionTime = root["transition"];
+    }
+    else {
+      transitionTime = CONFIG_DEFAULT_TRANSITION_TIME;
+    }
+  }
+
+
   return true;
 }
 
