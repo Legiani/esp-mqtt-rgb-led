@@ -19,27 +19,27 @@ enum strip {
 // In case of RGB(W): red, green, blue(, white) is used
 // All values need to be present, if they are not needed, set to -1,
 // it will be ignored.
-#define CONFIG_PIN_RED   0  // For RGB(W)
-#define CONFIG_PIN_GREEN 2  // For RGB(W)
-#define CONFIG_PIN_BLUE  3  // For RGB(W)
+#define CONFIG_PIN_RED   4  // For RGB(W)
+#define CONFIG_PIN_GREEN 0  // For RGB(W)
+#define CONFIG_PIN_BLUE  2  // For RGB(W)
 #define CONFIG_PIN_WHITE -1 // For BRIGHTNESS and RGBW
 
 // WiFi
-#define CONFIG_WIFI_SSID "{WIFI-SSID}"
-#define CONFIG_WIFI_PASS "{WIFI-PASSWORD}"
+#define CONFIG_WIFI_SSID "{Wifi-SSID}}"
+#define CONFIG_WIFI_PASS "{Wifi-Password}"
 
 // MQTT
-#define CONFIG_MQTT_HOST "{MQTT-SERVER}"
+#define CONFIG_MQTT_HOST "{mqtt-ip}"
 #define CONFIG_MQTT_PORT 1883 // Usually 1883
-#define CONFIG_MQTT_USER "{MQTT-USERNAME}"
-#define CONFIG_MQTT_PASS "{MQTT-PASSWORD}"
+#define CONFIG_MQTT_USER "{user}"
+#define CONFIG_MQTT_PASS "{password}"
 #define CONFIG_MQTT_CLIENT_ID "ESP_LED" // Must be unique on the MQTT network
 
 #define CONFIG_DEFAULT_TRANSITION_TIME 1
 
 // MQTT Topics
-#define CONFIG_MQTT_TOPIC_STATE "home/ESP_LED"
-#define CONFIG_MQTT_TOPIC_SET "home/ESP_LED/set"
+#define CONFIG_MQTT_TOPIC_STATE "home/pokoj/led"
+#define CONFIG_MQTT_TOPIC_SET "home/pokoj/led/set"
 
 #define CONFIG_MQTT_PAYLOAD_ON "ON"
 #define CONFIG_MQTT_PAYLOAD_OFF "OFF"

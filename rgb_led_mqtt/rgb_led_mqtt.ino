@@ -106,7 +106,7 @@ void setup() {
   analogWriteRange(255);
 
   if (CONFIG_DEBUG) {
-    Serial.begin(115200);
+    Serial.begin(57600);
   }
 
   setup_wifi();

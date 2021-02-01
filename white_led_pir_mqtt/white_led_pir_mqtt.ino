@@ -1,12 +1,16 @@
 /*
  * ESP8266 MQTT Lights for Home Assistant.
  *
- * This file is for single-color lights.
+ * Created DIY lights for Home Assistant using MQTT and JSON.
+ * This project supports single-color, RGB, and RGBW lights.
  *
- * See https://github.com/corbanmailloux/esp-mqtt-rgb-led
+ * Copy the included `config-sample.h` file to `config.h` and update
+ * accordingly for your setup.
+ *
+ * See https://github.com/corbanmailloux/esp-mqtt-rgb-led for more information.
  */
 
-// Set configuration options for pins, WiFi, and MQTT in the following file:
+// Set configuration options for LED type, pins, WiFi, and MQTT in the following file:
 #include "config.h"
 
 // https://github.com/bblanchon/ArduinoJson
@@ -17,43 +21,19 @@
 // http://pubsubclient.knolleary.net/
 #include <PubSubClient.h>
 
-const bool debug_mode = CONFIG_DEBUG;
-const bool led_invert = CONFIG_INVERT_LED_LOGIC;
-
-const int redPin = CONFIG_PIN_LIGHT;
-const int txPin = BUILTIN_LED; // On-board blue LED
-// const int greenPin = 2;
-// const int bluePin = 3;
-
-const char* ssid = CONFIG_WIFI_SSID;
-const char* password = CONFIG_WIFI_PASS;
-
-const char* mqtt_server = CONFIG_MQTT_HOST;
-const char* mqtt_username = CONFIG_MQTT_USER;
-const char* mqtt_password = CONFIG_MQTT_PASS;
-const char* client_id = CONFIG_MQTT_CLIENT_ID;
-
-// Topics
-const char* light_state_topic = CONFIG_MQTT_TOPIC_STATE;
-const char* light_set_topic = CONFIG_MQTT_TOPIC_SET;
-
-const char* on_cmd = CONFIG_MQTT_PAYLOAD_ON;
-const char* off_cmd = CONFIG_MQTT_PAYLOAD_OFF;
-
-const int BUFFER_SIZE = JSON_OBJECT_SIZE(8);
+const int BUFFER_SIZE = JSON_OBJECT_SIZE(20);
 
 // Maintained state for reporting to HA
-byte red = 255;
-// byte green = 255;
-// byte blue = 255;
+
+byte white = 255;
 byte brightness = 255;
 
 // Real values to write to the LEDs (ex. including brightness and state)
-byte realRed = 0;
-// byte realGreen = 0;
-// byte realBlue = 0;
 
+byte realWhite = 0;
 bool stateOn = false;
+
+bool lastLedButtonPressd = false;
 
 // Globals for fade/transitions
 bool startFade = false;
@@ -61,38 +41,54 @@ unsigned long lastLoop = 0;
 int transitionTime = 0;
 bool inFade = false;
 int loopCount = 0;
-int stepR; //, stepG, stepB;
-int redVal; //, grnVal, bluVal;
+int stepW;
+int whtVal;
 
 // Globals for flash
 bool flash = false;
 bool startFlash = false;
 int flashLength = 0;
 unsigned long flashStartTime = 0;
-byte flashRed = red;
-// byte flashGreen = green;
-// byte flashBlue = blue;
+byte flashWhite = white;
 byte flashBrightness = brightness;
+
+//Globals for colorfade
+bool colorfade = false;
+
 
 WiFiClient espClient;
 PubSubClient client(espClient);
 
 void setup() {
-  pinMode(redPin, OUTPUT);
-  // pinMode(greenPin, OUTPUT);
-  // pinMode(bluePin, OUTPUT);
 
-  pinMode(txPin, OUTPUT);
-  digitalWrite(txPin, HIGH); // Turn off the on-board LED
+  // prepare GPIO4
+  pinMode(CONFIG_PIN_SENSORE, INPUT);
+  pinMode(CONFIG_LED_BUTTON, INPUT);
+  
+  pinMode(CONFIG_PIN_WHITE, OUTPUT);
+
+  // Set the LED_BUILTIN based on the CONFIG_LED_BUILTIN_MODE
+  switch (CONFIG_LED_BUILTIN_MODE) {
+    case 0:
+      pinMode(LED_BUILTIN, OUTPUT);
+      digitalWrite(LED_BUILTIN, LOW);
+      break;
+    case 1:
+      pinMode(LED_BUILTIN, OUTPUT);
+      digitalWrite(LED_BUILTIN, HIGH);
+      break;
+    default: // Other options (like -1) are ignored.
+      break;
+  }
 
   analogWriteRange(255);
 
-  if (debug_mode) {
+  if (CONFIG_DEBUG) {
     Serial.begin(115200);
   }
 
   setup_wifi();
-  client.setServer(mqtt_server, 1883);
+  client.setServer(CONFIG_MQTT_HOST, CONFIG_MQTT_PORT);
   client.setCallback(callback);
 }
 
@@ -101,10 +97,10 @@ void setup_wifi() {
   // We start by connecting to a WiFi network
   Serial.println();
   Serial.print("Connecting to ");
-  Serial.println(ssid);
+  Serial.println(CONFIG_WIFI_SSID);
 
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, password);
+  WiFi.mode(WIFI_STA); // Disable the built-in WiFi access point.
+  WiFi.begin(CONFIG_WIFI_SSID, CONFIG_WIFI_PASS);
 
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
@@ -117,15 +113,6 @@ void setup_wifi() {
   Serial.println(WiFi.localIP());
 }
 
-  /*
-  SAMPLE PAYLOAD:
-    {
-      "brightness": 120,
-      "flash": 2,
-      "transition": 5,
-      "state": "ON"
-    }
-  */
 void callback(char* topic, byte* payload, unsigned int length) {
   Serial.print("Message arrived [");
   Serial.print(topic);
@@ -144,14 +131,10 @@ void callback(char* topic, byte* payload, unsigned int length) {
 
   if (stateOn) {
     // Update lights
-    realRed = map(red, 0, 255, 0, brightness);
-    // realGreen = map(green, 0, 255, 0, brightness);
-    // realBlue = map(blue, 0, 255, 0, brightness);
+    realWhite = map(white, 0, 255, 0, brightness);
   }
   else {
-    realRed = 0;
-    // realGreen = 0;
-    // realBlue = 0;
+    realWhite = 0;
   }
 
   startFade = true;
@@ -171,21 +154,22 @@ bool processJson(char* message) {
   }
 
   if (root.containsKey("state")) {
-    if (strcmp(root["state"], on_cmd) == 0) {
+    if (strcmp(root["state"], CONFIG_MQTT_PAYLOAD_ON) == 0) {
       stateOn = true;
     }
-    else if (strcmp(root["state"], off_cmd) == 0) {
+    else if (strcmp(root["state"], CONFIG_MQTT_PAYLOAD_OFF) == 0) {
       stateOn = false;
     }
   }
 
-  // If "flash" is included, treat RGB and brightness differently
+   // If "flash" is included, treat RGB and brightness differently
   if (root.containsKey("flash") ||
        (root.containsKey("effect") && strcmp(root["effect"], "flash") == 0)) {
 
     if (root.containsKey("flash")) {
       flashLength = (int)root["flash"] * 1000;
-    } else {
+    }
+    else {
       flashLength = CONFIG_DEFAULT_FLASH_LENGTH * 1000;
     }
 
@@ -196,32 +180,26 @@ bool processJson(char* message) {
       flashBrightness = brightness;
     }
 
-    // if (root.containsKey("color")) {
-    //   flashRed = root["color"]["r"];
-    //   flashGreen = root["color"]["g"];
-    //   flashBlue = root["color"]["b"];
-    // }
-    // else {
-    //   flashRed = red;
-    //   flashGreen = green;
-    //   flashBlue = blue;
-    // }
 
-    flashRed = map(flashRed, 0, 255, 0, flashBrightness);
-    // flashGreen = map(flashGreen, 0, 255, 0, flashBrightness);
-    // flashBlue = map(flashBlue, 0, 255, 0, flashBrightness);
+    if (root.containsKey("white_value")) {
+      flashWhite = root["white_value"];
+    }
+    else {
+      flashWhite = white;
+    }
+
+    flashWhite = map(flashWhite, 0, 255, 0, flashBrightness);
 
     flash = true;
     startFlash = true;
   }
-  else { // Not flashing
+  else { // No effect
     flash = false;
+    colorfade = false;
 
-    // if (root.containsKey("color")) {
-    //   red = root["color"]["r"];
-    //   green = root["color"]["g"];
-    //   blue = root["color"]["b"];
-    // }
+    if (root.containsKey("white_value")) {
+      white = root["white_value"];
+    }
 
     if (root.containsKey("brightness")) {
       brightness = root["brightness"];
@@ -231,9 +209,10 @@ bool processJson(char* message) {
       transitionTime = root["transition"];
     }
     else {
-      transitionTime = 0;
+      transitionTime = CONFIG_DEFAULT_TRANSITION_TIME;
     }
   }
+
 
   return true;
 }
@@ -243,18 +222,18 @@ void sendState() {
 
   JsonObject& root = jsonBuffer.createObject();
 
-  root["state"] = (stateOn) ? on_cmd : off_cmd;
-  // JsonObject& color = root.createNestedObject("color");
-  // color["r"] = red;
-  // color["g"] = green;
-  // color["b"] = blue;
-
+  root["state"] = (stateOn) ? CONFIG_MQTT_PAYLOAD_ON : CONFIG_MQTT_PAYLOAD_OFF;
+  
   root["brightness"] = brightness;
+
+  root["white_value"] = white;
+ 
+  root["effect"] = "null";
 
   char buffer[root.measureLength() + 1];
   root.printTo(buffer, sizeof(buffer));
 
-  client.publish(light_state_topic, buffer, true);
+  client.publish(CONFIG_LED_TOPIC_STATE, buffer, true);
 }
 
 void reconnect() {
@@ -262,9 +241,9 @@ void reconnect() {
   while (!client.connected()) {
     Serial.print("Attempting MQTT connection...");
     // Attempt to connect
-    if (client.connect(client_id, mqtt_username, mqtt_password)) {
+    if (client.connect(CONFIG_MQTT_CLIENT_ID, CONFIG_MQTT_USER, CONFIG_MQTT_PASS)) {
       Serial.println("connected");
-      client.subscribe(light_set_topic);
+      client.subscribe(CONFIG_LED_TOPIC_SET);
     } else {
       Serial.print("failed, rc=");
       Serial.print(client.state());
@@ -275,70 +254,66 @@ void reconnect() {
   }
 }
 
-void setColor(int inR) { //, int inG, int inB) {
-  if (led_invert) {
-    inR = (255 - inR);
+void setColor(int inW) {
+  if (CONFIG_INVERT_LED_LOGIC) {
+    inW = (255 - inW);
   }
-  
-  analogWrite(redPin, inR);
-  // analogWrite(greenPin, inG);
-  // analogWrite(bluePin, inB);
 
-  Serial.println("Setting LEDs:");
-  // Serial.print("r: ");
-  Serial.println(inR);
-  // Serial.print(", g: ");
-  // Serial.print(inG);
-  // Serial.print(", b: ");
-  // Serial.println(inB);
+  analogWrite(CONFIG_PIN_WHITE, inW);
+
+  if (CONFIG_DEBUG) {
+    Serial.print("Setting LEDs: {");
+
+      Serial.print("w: ");
+      Serial.print(inW);
+
+
+    Serial.println("}");
+  }
 }
 
 void loop() {
-
   if (!client.connected()) {
     reconnect();
   }
+
   client.loop();
 
-  if (flash) {
-    if (startFlash) {
-      startFlash = false;
-      flashStartTime = millis();
-    }
+    if (digitalRead(CONFIG_LED_BUTTON) != lastLedButtonPressd) {
+      lastLedButtonPressd = digitalRead(CONFIG_LED_BUTTON);
+      Serial.print("LedButton presed ");
+      Serial.println(digitalRead(CONFIG_LED_BUTTON));
+      if (digitalRead(CONFIG_LED_BUTTON) == HIGH) {
+        client.publish(CONFIG_LEDBUTTON_TOPIC_STATE, CONFIG_MQTT_PAYLOAD_ON);
+      } else {
+        client.publish(CONFIG_LEDBUTTON_TOPIC_STATE, CONFIG_MQTT_PAYLOAD_OFF);
 
-    if ((millis() - flashStartTime) <= flashLength) {
-      if ((millis() - flashStartTime) % 1000 <= 500) {
-        setColor(flashRed); //, flashGreen, flashBlue);
-      }
-      else {
-        setColor(0); //, 0, 0);
-        // If you'd prefer the flashing to happen "on top of"
-        // the current color, uncomment the next line.
-        // setColor(realRed, realGreen, realBlue);
       }
     }
-    else {
-      flash = false;
-      setColor(realRed); //, realGreen, realBlue);
-    }
-  }
+    
+
+      if (digitalRead(CONFIG_PIN_SENSORE) == LOW) {
+          Serial.println("Pir message sended");
+
+          client.publish(CONFIG_PIR_TOPIC_STATE, CONFIG_MQTT_PAYLOAD_ON);
+      }
+    
+
 
   if (startFade) {
     // If we don't want to fade, skip it.
     if (transitionTime == 0) {
-      setColor(realRed); //, realGreen, realBlue);
+      setColor(realWhite);
 
-      redVal = realRed;
-      // grnVal = realGreen;
-      // bluVal = realBlue;
+
+      whtVal = realWhite;
 
       startFade = false;
     }
     else {
       loopCount = 0;
-      stepR = calculateStep(redVal, realRed);
-      // stepG = calculateStep(grnVal, realGreen);
-      // stepB = calculateStep(bluVal, realBlue);
+
+      stepW = calculateStep(whtVal, realWhite);
 
       inFade = true;
     }
@@ -350,12 +325,10 @@ void loop() {
     if (now - lastLoop > transitionTime) {
       if (loopCount <= 1020) {
         lastLoop = now;
+        
+        whtVal = calculateVal(stepW, whtVal, loopCount);
 
-        redVal = calculateVal(stepR, redVal, loopCount);
-        // grnVal = calculateVal(stepG, grnVal, loopCount);
-        // bluVal = calculateVal(stepB, bluVal, loopCount);
-
-        setColor(redVal); //, grnVal, bluVal); // Write current values to LED pins
+        setColor(whtVal); // Write current values to LED pins
 
         Serial.print("Loop count: ");
         Serial.println(loopCount);
